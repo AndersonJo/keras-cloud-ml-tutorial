@@ -1,0 +1,13 @@
+# Projects
+.idea
+.ipynb_checkpoints
+MANIFEST
+
+# Data & Model
+checkpoints
+mnist
+model.h5
+
+# Python
+__pycache__
+*.pyc
