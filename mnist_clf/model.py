@@ -35,7 +35,7 @@ def create_model() -> Tuple[Model, tf.Tensor]:
 
 
 # Save Model
-def save_as_tensorflow(model: Model, export_path: str, arg_max):
+def save_as_tensorflow(model: Model, export_path: str, arg_max: tf.Tensor):
     """
     Convert the Keras HDF5 model into TensorFlow SavedModel
     export_path: either local path or Google Cloud Storage's bucket path

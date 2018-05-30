@@ -6,25 +6,24 @@ Keras를 Google Cloud ML Engine에서 학습시키고 서빙까지 하는 방법
 
 
 
-# Tutorial
+# Structure
 
-## Structure
-
-Google Cloud ML Engine에서 사용하기 위해서는 다음과 같은 구조를 갖고 있어야 합니다. 
+Google Cloud ML Engine에서 사용하기 위해서는 다음과 같은 **최소한의** 구조를 갖고 있어야 합니다. 
 
 ```
 .
 ├── config.yaml
 ├── README.md
 ├── setup.py
-└── trainer
-    ├── __init__.py
+├── trainer
+│   ├── __init__.py
+│   ├── config.yaml
     └── train.py
 ```
 
 
 
-## Virtual Environtment
+# Virtual Environment
 
 먼저 virtual environment 를 생성합니다. 
 
@@ -38,7 +37,7 @@ source cmle/bin/activate
 
 
 
-## Google Cloud SDK
+# Google Cloud SDK
 
 [Google Cloud SDK 설치방법](https://github.com/AndersonJo/google-cloud-platform/blob/master/01-quickstart.md) 을 참고하여 설치를 합니다. 
 
@@ -52,7 +51,7 @@ gcloud ml-engine models list
 
 
 
-## MNIST Dataset
+# MNIST Dataset
 
 먼저 MNIST 데이터를 다운 받습니다.
 
@@ -80,104 +79,120 @@ gsutil ls gs://anderson-mnist
 
 
 
-## Model 
-
-먼저 모델을 넣을 디렉토리를 만듭니다.
-
-```
-mkdir trainer
-```
-
-model.py 안에 다음과 같이 Keras MNIST classification model을 만듭니다.
+# Model 생성및 TensorFlow Moldel로 저장 함수
 
 ```python
-import argparse
-import os
+from typing import Tuple, List
 
-import numpy as np
+import keras.backend as K
 import tensorflow as tf
-from keras import Sequential
+from keras import Sequential, Model, Input
 from keras.backend.tensorflow_backend import set_session
 from keras.layers import Dense, Activation, Dropout
-from tensorflow.examples.tutorials.mnist import input_data
-from tensorflow.python.platform import gfile
+from tensorflow.python.saved_model import builder as tf_model_builder, tag_constants, signature_constants
+from tensorflow.python.saved_model.signature_def_utils_impl import predict_signature_def
 from tensorflow.python.training.momentum import MomentumOptimizer
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--data', default='mnist',
-                    help='the path of training data (either local path or cloud storage path)')
-parser.add_argument('--checkpoint', default='checkpoints', help='local directory path to save the model')
-parser.add_argument('--cloud-path', help='directory path or cloud storage bucket to save the model or checkpoints')
-parser = parser.parse_args()
-
-
-# Data
-def load_mnist(path='mnist'):
-    mnist = input_data.read_data_sets(path, one_hot=True)
-    train_x = mnist.train.images
-    train_y = mnist.train.labels
-    test_x = mnist.test.images
-    test_y = mnist.test.labels
-
-    return train_x, train_y, test_x, test_y
 
 
 # Model
-def create_model():
+def create_model() -> Tuple[Model, tf.Tensor]:
     config = tf.ConfigProto()
     config.gpu_options.per_process_gpu_memory_fraction = 0.1
     set_session(tf.Session(config=config))
 
-    model = Sequential()
-    model.add(Dense(512, activation='relu', input_shape=(784,)))
-    model.add(Dropout(0.2, seed=0))
-    model.add(Dense(256, activation='relu'))
-    model.add(Dropout(0.2, seed=0))
-    model.add(Dense(10))
-    model.add(Activation('softmax'))
+    image_input = Input(shape=(784,))
 
+    h = Dense(512, activation='relu', input_shape=(784,))(image_input)
+    h = Dropout(0.2, seed=0)(h)
+    h = Dense(256, activation='relu')(h)
+    h = Dropout(0.2, seed=0)(h)
+    h = Dense(10)(h)
+    output = Activation('softmax')(h)
+    arg_max = K.argmax(output)
+
+    model = Model(image_input, [output])
     model.compile(loss='categorical_crossentropy',
                   optimizer=MomentumOptimizer(0.01, momentum=0.9),
                   metrics=['accuracy'])
-    return model
+
+    return model, arg_max
+```
+
+Keras Model을 그냥 저장시키면 안되고 TensorFlow Model 형태로 저장을 해야 합니다. 
+
+아래의 함수를 사용해서 TensorFlow Model로 저장할수 있습니다. 
+
+```python
+# Save Model
+def save_as_tensorflow(model: Model, export_path: str, arg_max: tf.Tensor):
+    builder = tf_model_builder.SavedModelBuilder(export_path)
+    signature = predict_signature_def(inputs={'image': model.inputs[0]},
+                                      outputs={'probabilities': model.outputs[0],
+                                               'class': arg_max})
+    sess = K.get_session()
+    builder.add_meta_graph_and_variables(
+        sess=sess,
+        tags=[tag_constants.SERVING],
+        signature_def_map={signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY: signature}
+    )
+    builder.save()
+```
 
 
-def save_to_cloud(local_path, cloud_path):
-    # Save the model in the cloud
-    if cloud_path is not None:
-        remote_path = os.path.join(cloud_path, 'model.h5')
-        if not gfile.Exists(cloud_path):
-            gfile.MakeDirs(cloud_path)
-        with gfile.GFile(local_path, mode='rb') as f:
-            with gfile.GFile(remote_path, mode='wb') as w:  # save the model to the cloud storage
-                w.write(f.read())
 
+
+
+# Trainer 
+
+trainer 파이썬 패키지안에 task.py를 생성합니다. 
+
+```python
+import argparse
+import os
+import shutil
+
+import keras.backend as K
+import numpy as np
+import tensorflow as tf
+
+from mnist_clf.dataset import load_mnist
+from mnist_clf.model import create_model, save_as_tensorflow
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--job-dir', default='checkpoints', help='local directory path to save the model')
+parser.add_argument('--train-file', default='mnist',
+                    help='either local directory path or cloud storage path to load MNIST dataset')
+parser = parser.parse_args()
 
 def main(parser):
     # Set Random Seed
     np.random.seed(0)
     tf.set_random_seed(0)
 
-    train_x, train_y, test_x, test_y = load_mnist('gs://anderson-mnist')
-    model = create_model()
+    # Reset Session
+    K.clear_session()
+    sess = tf.Session()
+    K.set_session(sess)
+
+    # Disable loading of learning nodes
+    K.set_learning_phase(0)
+
+    # Data
+    train_x, train_y, test_x, test_y = load_mnist(parser.train_file)
+    model, arg_max = create_model()
 
     # Train
-    model.fit(train_x, train_y, epochs=1, verbose=1)
+    model.fit(train_x, train_y, batch_size=32, epochs=1, verbose=1)
 
-    # Save the model locally
-    local_path = os.path.join(parser.checkpoint, 'model.h5')
-    if not os.path.exists(parser.checkpoint):
-        os.makedirs(parser.checkpoint)
-    model.save(local_path)
-
-    # Save the model to the Cloud
-    save_to_cloud(local_path, parser.cloud_path)
+    # Save the model
+    model_path = os.path.join(parser.job_dir, 'model')
+    shutil.rmtree(model_path, ignore_errors=True)
+    save_as_tensorflow(model, model_path, arg_max=arg_max)
 
     # Evaluate
     test_loss, test_acc = model.evaluate(test_x, test_y, verbose=0)
     print('Test Loss:', test_loss)
     print('Test Accuracy:', test_acc)
-
 
 if __name__ == '__main__':
     main(parser)
@@ -199,13 +214,20 @@ python3.6 trainer/train.py --job-dir=gs://anderson-mnist/checkpoints
 
 
 
-## config.yaml 설정
+
+
+# config.yaml 설정
 
 Cloud ML Engine내에서 학습시킬때 Python 3.5를 사용하게 하거나 (default는 python2.7), GPU를 사용하기 위해서는 `config.yaml` 같은 파일을 만들고 설정파일을 넣습니다. 
 
+먼저 config.yaml을 trainer 디렉토리안에 생성을 합니다.
 
+```
+cd trainer
+vi config.yaml
+```
 
-예제로 다음과 같이 설정 할 수 있습니다.
+설정은 다음과 같이 합니다. 
 
 ```
 trainingInput:
@@ -220,7 +242,7 @@ trainingInput:
 
 
 
-#### Python 3.5 사용
+## Python 3.5 사용
 
 아래의 설정이 들어가야 합니다.
 
@@ -240,7 +262,7 @@ gcloud ml-engine jobs submit training $JOB_NAME \
 
 
 
-#### GPU 설정
+## GPU 설정
 
 GPU 모델은 다음의 옵션으로 설정 가능합니다.
 
@@ -259,7 +281,15 @@ GPU 모델은 다음의 옵션으로 설정 가능합니다.
 
 
 
-## setup.py 설정하기
+
+## Machine Type 설정
+
+[Machine Types](https://cloud.google.com/ml-engine/docs/tensorflow/machine-types) 을 참고 합니다. 
+
+
+
+
+# setup.py 설정하기
 
 아래와 같이 설정을 합니다.
 
@@ -267,7 +297,7 @@ GPU 모델은 다음의 옵션으로 설정 가능합니다.
 from setuptools import setup, find_packages
 
 setup(
-    name='keras-google-cloud-machine-learning',
+    name='keras-cloud-ml-engine-tutorial',
     version='0.1',
     packages=find_packages(),  # ['trainer'],
     url='',
@@ -277,7 +307,8 @@ setup(
     description='',
     install_requires=[
         'keras',
-        'h5py'
+        'h5py',
+        'six'
     ]
 )
 ```
@@ -287,7 +318,7 @@ setup(
 
 
 
-## gcloud 사용해서 학습시키기
+# gcloud 사용해서 학습시키기
 
 먼저 변수들을 선언해줍니다.
 
@@ -298,15 +329,21 @@ export JOB_DIR=gs://$BUCKET_NAME/$CHECKPOINT
 export REGION=us-east1
 ```
 
+## Local 환경에서 학습
+
 Local에서 학습을 테스트 합니다. 
 Cloud환경에서 먼저 학습을 돌리기전에 테스트하는 과정이라고 생각하면 됩니다.
 
 ```bash
 gcloud ml-engine local train \
-  --job-dir $JOB_DIR \
-  --module-name trainer.train \
-  --package-path ./trainer
+  --job-dir checkpoints \
+  --module-name trainer.task \
+  --package-path ./trainer \
+  -- \
+  --train-file gs://$BUCKET_NAME
 ```
+
+## Cloud 환경에서 학습
 
 Cloud 환경에서 실제 학습을 다음과 같이 시킬수 있습니다.
 
@@ -314,13 +351,26 @@ Cloud 환경에서 실제 학습을 다음과 같이 시킬수 있습니다.
 gcloud ml-engine jobs submit training $JOB_NAME \
   --job-dir $JOB_DIR \
   --runtime-version 1.8 \
-  --module-name trainer.train \
+  --module-name trainer.task \
   --package-path ./trainer \
   --region $REGION \
-  --config config.yaml
+  --config trainer/config.yaml \
+  -- \
+  --train-file gs://$BUCKET_NAME
 ````
 
 
 
+- **JOB DIR**: 학습 뒤 결과가 저장되는 곳이며, Cloud Storage의 주소를 적으면 됩니다. 
 
+
+
+# Local 환경에서 Predict 
+
+```
+gcloud ml-engine local predict \
+  --model-dir checkpoints/model \
+  --json-instances sample.json \
+  --verbosity debug
+```
 
