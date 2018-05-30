@@ -1,19 +1,19 @@
 import argparse
 import os
+import shutil
 
+import keras.backend as K
 import numpy as np
 import tensorflow as tf
-from tensorflow.python.platform import gfile
 
-from mnist_clf.dataset import load_mnist, create_sample
-from mnist_clf.model import create_model, save_model
-import keras.backend as K
+from mnist_clf.dataset import load_mnist
+from mnist_clf.model import create_model, save_as_tensorflow
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data', default='mnist',
-                    help='the path of training data (either local path or cloud storage path)')
 parser.add_argument('--job-dir', default='checkpoints', help='local directory path to save the model')
 
+parser.add_argument('--train-file', default='mnist',
+                    help='either local directory path or cloud storage path to load MNIST dataset')
 parser = parser.parse_args()
 
 
@@ -22,18 +22,30 @@ def main(parser):
     np.random.seed(0)
     tf.set_random_seed(0)
 
+    # Reset Session
+    K.clear_session()
+    sess = tf.Session()
+    K.set_session(sess)
+
     # Disable loading of learning nodes
     K.set_learning_phase(0)
 
-    train_x, train_y, test_x, test_y = load_mnist('mnist')  # load_mnist('gs://anderson-mnist')
-    model = create_model()
+    # Data
+    train_x, train_y, test_x, test_y = load_mnist(parser.train_file)  # load_mnist('gs://anderson-mnist')
+    model, arg_max = create_model()
 
     # Train
-    model.fit(train_x, train_y, epochs=1, verbose=1)
+    model.fit(train_x, train_y, batch_size=32, epochs=1, verbose=1)
 
-    # Save the model locally
+    # Save the model
+    model_path = os.path.join(parser.job_dir, 'model')
+    shutil.rmtree(model_path, ignore_errors=True)
+    save_as_tensorflow(model, model_path, arg_max=arg_max)
 
-    save_model(model, 'checkpoints/model.ckpt')
+    # Evaluate
+    test_loss, test_acc = model.evaluate(test_x, test_y, verbose=0)
+    print('Test Loss:', test_loss)
+    print('Test Accuracy:', test_acc)
 
     # Save the model to the Cloud
     # if parser.job_dir is not None:
@@ -43,11 +55,6 @@ def main(parser):
     #     with gfile.GFile('/tmp/model.h5', mode='rb') as f:
     #         with gfile.GFile(remote_path, mode='wb') as w:  # save the model to the cloud storage
     #             w.write(f.read())
-
-    # Evaluate
-    test_loss, test_acc = model.evaluate(test_x, test_y, verbose=0)
-    print('Test Loss:', test_loss)
-    print('Test Accuracy:', test_acc)
 
 
 if __name__ == '__main__':

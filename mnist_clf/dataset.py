@@ -14,19 +14,23 @@ def load_mnist(path='mnist'):
     return train_x, train_y, test_x, test_y
 
 
-def create_sample(data_x, data_y):
+def create_sample(data_x, data_y, export: str = 'sample.json'):
     samples = dict()
+    count = 0
     for x, y in zip(data_x, data_y):
         label_idx = np.argmax(y)
-        if label_idx in samples:
-            continue
+        if label_idx == count:
+            samples[label_idx] = (x, y)
+            count += 1
 
-        samples[label_idx] = (x, y)
+        if count == 10:
+            break
 
-    samples = [{'key': k.tolist(), 'output': v[1].tolist(), 'image': v[0].tolist()} for k, v in samples.items()]
-    samples = sorted(samples, key=lambda x: x['key'])
+    # samples = [{'key': k.tolist(), 'output': v[1].tolist(), 'image': v[0].tolist()} for k, v in samples.items()]
+    samples = [{'image': v[0].tolist()} for k, v in samples.items()]
+    # samples = sorted(samples, key=lambda x: x['key'])
 
-    with open('sample.json', 'w') as f:
+    with open(export, 'w') as f:
         for sample in samples:
             f.write(json.dumps(sample))
             f.write('\n')

@@ -11,6 +11,7 @@ setup(
     description='',
     install_requires=[
         'keras',
-        'h5py'
+        'h5py',
+        'six'
     ]
 )
