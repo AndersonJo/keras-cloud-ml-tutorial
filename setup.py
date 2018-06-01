@@ -12,6 +12,7 @@ setup(
     install_requires=[
         'keras',
         'h5py',
-        'six'
+        'six',
+        'google-api-python-client'
     ]
 )
