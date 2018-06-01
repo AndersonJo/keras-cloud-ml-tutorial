@@ -359,18 +359,82 @@ gcloud ml-engine jobs submit training $JOB_NAME \
   --train-file gs://$BUCKET_NAME
 ````
 
-
-
 - **JOB DIR**: 학습 뒤 결과가 저장되는 곳이며, Cloud Storage의 주소를 적으면 됩니다. 
 
 
 
-# Local 환경에서 Predict 
+# Local 환경에서 Predict
 
-```
+```bash
 gcloud ml-engine local predict \
   --model-dir checkpoints/model \
   --json-instances sample.json \
   --verbosity debug
+```
+
+
+
+# Cloud ML에 Deploy하기
+
+클라우드상에 설치된 모델을 ls 명령어로 확인을 합니다. 
+
+```bash
+gsutil ls gs://anderson-mnist/mnist_train_*
+```
+
+```
+gs://anderson-mnist/mnist_train_20180530_144908/:
+gs://anderson-mnist/mnist_train_20180530_144908/model/
+gs://anderson-mnist/mnist_train_20180530_144908/packages/
+
+gs://anderson-mnist/mnist_train_20180530_162809/:
+gs://anderson-mnist/mnist_train_20180530_162809/model/
+gs://anderson-mnist/mnist_train_20180530_162809/packages/
+```
+
+모델의 주소가 `gs://anderson-mnist/mnist_train_20180530_162809/model/` 라는 것을 확인했고 디플로이를 합니다. 
+
+```bash
+MODEL_BINARIES=gs://anderson-mnist/mnist_train_20180530_162809/model/
+MODEL_NAME=mnist
+
+gcloud ml-engine versions create v1 \
+  --model $MODEL_NAME \
+  --origin $MODEL_BINARIES \
+  --runtime-version 1.8
+```
+
+클라우드상에 생성된 모델을 확인합니다.
+
+```bash
+gcloud ml-engine models list
+```
+
+```
+NAME   DEFAULT_VERSION_NAME
+mnist  v1
+```
+
+최종적으로 **예측**도 해봅니다.
+
+```
+gcloud ml-engine predict \
+  --model $MODEL_NAME \
+  --version v1 \
+  --json-instances sample.json
+```
+
+```
+CLASS  PROBABILITIES
+0      [0.9993340373039246, ..., 0.0002702845085877925]
+1      [1.169654979094048e-06, ..., 8.002129470696673e-05]
+2      [2.6620080461725593e-05, ..., 8.218656262215518e-07]
+3      [2.932660026999656e-05, ..., 0.00019038221216760576]
+4      [5.971842398366789e-08, ..., 0.04169595614075661]
+5      [0.0009943349286913872, ..., 0.0004937952617183328]
+6      [5.941236668149941e-05, ..., 1.3123836879458395e-06]
+7      [2.825109504556167e-06, ..., 0.004673224873840809]
+8      [0.0004219221300445497, ..., 0.001314960652962327]
+9      [0.000538919004611671, ..., 0.8796722888946533]
 ```
 
