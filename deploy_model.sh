@@ -1,6 +1,6 @@
 #!/bin/bash
 
-MODEL_BINARIES=gs://anderson-mnist/mnist_train_20180530_162809/model/
+MODEL_BINARIES=gs://anderson-mnist-ml/mnist_train_20180604_162855/model/
 MODEL_NAME=mnist
 
 gcloud ml-engine versions create v1 \

@@ -376,6 +376,16 @@ gcloud ml-engine local predict \
 
 # Cloud ML에 Deploy하기
 
+먼저 모델을 만들도록 합니다.
+
+```bash
+MODEL_NAME=mnist
+REGION=us-central1
+gcloud ml-engine models create $MODEL_NAME --regions=$REGION
+```
+
+모델을 만들었으면 학습된 TensorFlow 저장된 파일을 연결시켜야 합니다. 
+
 클라우드상에 설치된 모델을 ls 명령어로 확인을 합니다. 
 
 ```bash
