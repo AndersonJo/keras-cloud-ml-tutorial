@@ -4,7 +4,7 @@ import keras.backend as K
 import tensorflow as tf
 from keras import Sequential, Model, Input
 from keras.backend.tensorflow_backend import set_session
-from keras.layers import Dense, Activation, Dropout
+from keras.layers import Dense, Activation, Dropout, Lambda
 from tensorflow.python.saved_model import builder as tf_model_builder, tag_constants, signature_constants
 from tensorflow.python.saved_model.signature_def_utils_impl import predict_signature_def
 from tensorflow.python.training.momentum import MomentumOptimizer
@@ -43,7 +43,9 @@ def save_as_tensorflow(model: Model, export_path: str, arg_max: tf.Tensor):
     """
 
     builder = tf_model_builder.SavedModelBuilder(export_path)
-    signature = predict_signature_def(inputs={'image': model.inputs[0]},
+
+    signature = predict_signature_def(inputs={'image': model.inputs[0],
+                                              'image_bytes': model.inputs[0]},
                                       outputs={'probabilities': model.outputs[0],
                                                'class': arg_max})
     sess = K.get_session()
