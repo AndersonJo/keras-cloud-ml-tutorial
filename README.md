@@ -44,7 +44,7 @@ source cmle/bin/activate
 설치후 다음과 같은 명령어를 사용할 수 있습니다. 
 
 ```
-sudo pip3 install google-cloud
+sudo pip3 install --upgrade google-cloud google-api-python-client
 ```
 
 
